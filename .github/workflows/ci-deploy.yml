@@ -1,0 +1,57 @@
+name: CI Build & Publish
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  test-backend:
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install backend deps
+        working-directory: ./backend
+        run: npm ci
+      - name: Run backend tests
+        working-directory: ./backend
+        run: npm test
+
+  render-deploy:
+    needs: test-backend
+    runs-on: [self-hosted, linux]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger Render deploy for backend (repo build)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_BACKEND_SERVICE_ID: ${{ secrets.RENDER_BACKEND_SERVICE_ID }}
+        run: |
+          if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_BACKEND_SERVICE_ID" ]; then
+            echo "Render secrets not set, skipping backend deploy";
+            exit 0;
+          fi
+          echo "Triggering backend deploy for service $RENDER_BACKEND_SERVICE_ID"
+          curl -X POST "https://api.render.com/v1/services/$RENDER_BACKEND_SERVICE_ID/deploys" \
+            -H "Accept: application/json" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -d '{"clearCache":true}'
+
+      - name: Trigger Render deploy for frontend (repo build)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_FRONTEND_SERVICE_ID: ${{ secrets.RENDER_FRONTEND_SERVICE_ID }}
+        run: |
+          if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_FRONTEND_SERVICE_ID" ]; then
+            echo "Render secrets not set, skipping frontend deploy";
+            exit 0;
+          fi
+          echo "Triggering frontend deploy for service $RENDER_FRONTEND_SERVICE_ID"
+          curl -X POST "https://api.render.com/v1/services/$RENDER_FRONTEND_SERVICE_ID/deploys" \
+            -H "Accept: application/json" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -d '{"clearCache":true}'
